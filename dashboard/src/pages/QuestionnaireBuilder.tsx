@@ -208,19 +208,27 @@ export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderPro
     return <Icon className="h-4 w-4" />;
   };
 
-  const createCustomQuestion = () => {
+  const createCustomQuestion = (questionType: string = 'text') => {
     const newQuestion: Question = {
       id: `custom-${Date.now()}`,
-      type: 'text',
-      question: 'New Custom Question',
+      type: questionType as Question['type'],
+      question: `New ${questionType.replace(/[_-]/g, ' ')} Question`,
       required: false,
-      placeholder: 'Enter response'
+      placeholder: questionType === 'email' ? 'your@email.com' : 
+                  questionType === 'tel' ? 'Mobile number' : 
+                  questionType === 'textarea' ? 'Enter detailed response' :
+                  'Enter response',
+      options: ['dropdown', 'multiple-choice', 'checkbox_group'].includes(questionType) 
+        ? ['Option 1', 'Option 2', 'Option 3'] 
+        : undefined,
+      maxRating: questionType === 'rating' ? 5 : undefined,
+      maxTags: questionType === 'tags' ? 5 : undefined
     };
     
     setFormPages(prev => {
       const newPages = [...prev];
       const currentPage = [...(newPages[currentPageIndex] || [])];
-      currentPage.push([newQuestion]); // Add as new row with single column
+      currentPage.push([[newQuestion]]); // Add as new row with single column
       newPages[currentPageIndex] = currentPage;
       return newPages;
     });
@@ -540,36 +548,88 @@ export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderPro
               </div>
             </div>
 
-            {/* Page Navigation */}
-            {formPages.length > 1 && (
-              <div className="flex items-center gap-2 mb-6">
-                <span className="text-sm text-muted-foreground mr-2">Pages:</span>
-                {formPages.map((_, index) => (
-                  <Button
-                    key={index}
-                    variant={index === currentPageIndex ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setCurrentPageIndex(index)}
-                    className="h-8 w-8 p-0"
-                  >
-                    {index + 1}
+            {/* Control Bar */}
+            <div className="flex items-center justify-between mb-8 p-4 bg-card/50 rounded-lg border">
+              <div className="flex items-center gap-4">
+                {/* Page Navigation */}
+                {formPages.length > 1 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Pages:</span>
+                    {formPages.map((_, index) => (
+                      <Button
+                        key={index}
+                        variant={index === currentPageIndex ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPageIndex(index)}
+                        className="h-8 w-8 p-0"
+                      >
+                        {index + 1}
+                      </Button>
+                    ))}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={addNewPage}
+                      className="h-8 px-3 text-xs"
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Add Page
+                    </Button>
+                  </div>
+                )}
+                
+                {/* Form Statistics */}
+                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <span>{formPages.flat().flat().flat().length} questions</span>
+                  <span>•</span>
+                  <span>{currentRows.length} rows</span>
+                  {Object.keys(formValues).length > 0 && (
+                    <>
+                      <span>•</span>
+                      <span className="text-green-600">{Object.keys(formValues).length} responses</span>
+                    </>
+                  )}
+                </div>
+                
+                {/* Split Pages Suggestion */}
+                {formPages.length === 1 && currentRows.length >= 6 && (
+                  <Button variant="outline" size="sm" onClick={addNewPage} className="bg-yellow-50 border-yellow-200 text-yellow-700 hover:bg-yellow-100">
+                    <Plus className="h-4 w-4 mr-1" />
+                    Split into Pages
                   </Button>
-                ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={addNewPage}
-                  className="h-8 px-3 text-xs"
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Add Page
-                </Button>
+                )}
               </div>
-            )}
+              
+              {/* Main Action Buttons */}
+              <div className="flex items-center gap-2">
+                {formPages.length > 1 && currentPageIndex < formPages.length - 1 && (
+                  <GradientButton
+                    variant="outline"
+                    onClick={() => setCurrentPageIndex(currentPageIndex + 1)}
+                    className="flex items-center gap-2"
+                  >
+                    Next Page
+                    <ArrowRight className="h-4 w-4" />
+                  </GradientButton>
+                )}
+                {currentQuestions.length > 0 && (
+                  <GradientButton
+                    onClick={handleNext}
+                    className="flex items-center gap-2"
+                  >
+                    {formPages.length > 1 || currentQuestions.length > 5 ? (
+                      <>Finish Form <ArrowRight className="h-4 w-4" /></>
+                    ) : (
+                      <>Continue <ArrowRight className="h-4 w-4" /></>
+                    )}
+                  </GradientButton>
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* Main Layout: Left Panel + Center Canvas */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-300px)]">
+          {/* Main Layout: Left Panel + Right Panel */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-380px)]">
             {/* Left Panel - Question Bank */}
             <div className="lg:col-span-1 space-y-4">
               <Card className="border-0 shadow-elegant bg-card/50 backdrop-blur-sm">
@@ -631,16 +691,17 @@ export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderPro
                   <div className="space-y-3">
                     <h4 className="text-sm font-semibold text-muted-foreground">CUSTOM</h4>
                     <div className="grid grid-cols-2 gap-2">
-                      {questionTypes.slice(0, 6).map((type) => {
+                      {questionTypes.slice(0, 8).map((type) => {
                         const Icon = type.icon;
                         return (
                           <div
                             key={type.value}
-                            onClick={createCustomQuestion}
-                            className="p-2 bg-muted/50 rounded-md border cursor-pointer hover:bg-muted transition-colors text-center"
+                            onClick={() => createCustomQuestion(type.value)}
+                            className="p-2 bg-muted/50 rounded-md border cursor-pointer hover:bg-muted hover:shadow-sm transition-all text-center group"
                           >
-                            <Icon className="h-4 w-4 mx-auto mb-1" />
-                            <span className="text-xs">{type.label}</span>
+                            <Icon className="h-4 w-4 mx-auto mb-1 group-hover:text-primary transition-colors" />
+                            <span className="text-xs block">{type.label}</span>
+                            <span className="text-[10px] text-muted-foreground">{type.description}</span>
                           </div>
                         );
                       })}
@@ -648,28 +709,52 @@ export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderPro
                   </div>
                 </CardContent>
               </Card>
+              
+              {/* Form Responses Preview */}
+              {Object.keys(formValues).length > 0 && (
+                <Card className="border-0 shadow-card bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <CheckSquare className="h-4 w-4 text-green-600" />
+                      Live Responses ({Object.keys(formValues).length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="max-h-48 overflow-y-auto space-y-2">
+                      {Object.entries(formValues).slice(0, 5).map(([questionId, value]) => {
+                        const question = currentQuestions.find(q => q.id === questionId);
+                        if (!question || !value || (Array.isArray(value) && value.length === 0)) return null;
+                        
+                        return (
+                          <div key={questionId} className="p-2 bg-white/60 dark:bg-gray-900/60 rounded text-xs">
+                            <div className="font-medium text-green-700 dark:text-green-400 mb-1 truncate">
+                              {question.question}
+                            </div>
+                            <div className="text-gray-700 dark:text-gray-300 truncate">
+                              {Array.isArray(value) ? value.join(", ") : String(value)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {Object.keys(formValues).length > 5 && (
+                        <div className="text-xs text-muted-foreground text-center py-1">
+                          +{Object.keys(formValues).length - 5} more responses...
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
-            {/* Center Canvas - Form Builder */}
-            <div className="lg:col-span-2">
+            {/* Right Panel - Form Builder */}
+            <div className="lg:col-span-3">
               <Card className="border-0 shadow-elegant bg-card/50 backdrop-blur-sm h-full">
                 <CardHeader className="pb-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <HelpCircle className="h-5 w-5 text-primary" />
-                      <span>Form Builder - Page {currentPageIndex + 1}</span>
-                      <span className="text-sm text-muted-foreground">({currentQuestions.length} questions)</span>
-                    </div>
-                    {currentQuestions.length > 0 && (
-                      <GradientButton
-                        onClick={handleNext}
-                        size="sm"
-                        className="flex items-center gap-2"
-                      >
-                        {formPages.length > 1 || currentQuestions.length > 5 ? 'Done' : 'Continue'}
-                        <ArrowRight className="h-4 w-4" />
-                      </GradientButton>
-                    )}
+                  <div className="flex items-center gap-2">
+                    <HelpCircle className="h-5 w-5 text-primary" />
+                    <span>Form Builder - Page {currentPageIndex + 1}</span>
+                    <span className="text-sm text-muted-foreground">({currentQuestions.length} questions)</span>
                   </div>
                   <CardDescription>
                     Drop questions here to build your registration form
@@ -815,80 +900,6 @@ export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderPro
             </div>
           </div>
 
-          {/* Form Data Preview */}
-          {Object.keys(formValues).length > 0 && (
-            <Card className="mt-6 border-0 shadow-card bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20">
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <CheckSquare className="h-4 w-4 text-green-600" />
-                  Form Responses ({Object.keys(formValues).length} answers)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                  {Object.entries(formValues).map(([questionId, value]) => {
-                    const question = currentQuestions.find(q => q.id === questionId);
-                    if (!question || !value || (Array.isArray(value) && value.length === 0)) return null;
-                    
-                    return (
-                      <div key={questionId} className="p-3 bg-white/50 dark:bg-gray-900/50 rounded border">
-                        <div className="font-medium text-xs text-muted-foreground mb-1">
-                          {question.question}
-                        </div>
-                        <div className="text-sm">
-                          {Array.isArray(value) ? value.join(", ") : String(value)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Bottom Action Bar */}
-          {currentQuestions.length > 0 && (
-            <div className="mt-6 flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-muted-foreground">
-                  {formPages.flat().flat().flat().length} total questions, {currentRows.length} rows across {formPages.length} page(s)
-                </span>
-                {Object.keys(formValues).length > 0 && (
-                  <span className="text-sm text-green-600 bg-green-100 dark:bg-green-900/20 px-2 py-1 rounded">
-                    {Object.keys(formValues).length} responses collected
-                  </span>
-                )}
-                {formPages.length === 1 && currentRows.length > 4 && (
-                  <Button variant="outline" size="sm" onClick={addNewPage}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    Split into Pages
-                  </Button>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {formPages.length > 1 && currentPageIndex < formPages.length - 1 && (
-                  <GradientButton
-                    variant="outline"
-                    onClick={() => setCurrentPageIndex(currentPageIndex + 1)}
-                    className="flex items-center gap-2"
-                  >
-                    Next Page
-                    <ArrowRight className="h-4 w-4" />
-                  </GradientButton>
-                )}
-                <GradientButton
-                  onClick={handleNext}
-                  className="flex items-center gap-2"
-                >
-                  {formPages.length > 1 || currentQuestions.length > 5 ? (
-                    <>Finish Form <ArrowRight className="h-4 w-4" /></>
-                  ) : (
-                    <>Continue <ArrowRight className="h-4 w-4" /></>
-                  )}
-                </GradientButton>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </PageTransition>
