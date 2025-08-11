@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { ArrowLeft, Link2, Copy, ExternalLink, Check, Share2, Eye } from "lucide-react";
 import { Event } from "@/types/event";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface LinkGenerationProps {
   onBack: () => void;
@@ -15,17 +17,75 @@ interface LinkGenerationProps {
 }
 
 export const LinkGeneration = ({ onBack, event, onViewEvent, onBackToDashboard }: LinkGenerationProps) => {
+  const { user } = useAuth();
   const [eventUrl, setEventUrl] = useState("");
   const [copied, setCopied] = useState(false);
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const [linkGenerated, setLinkGenerated] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Generate the unique event URL
-    const baseUrl = window.location.origin;
-    const eventSlug = event.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    const uniqueUrl = `${baseUrl}/event/${eventSlug}-${event.uniqueId}`;
-    setEventUrl(uniqueUrl);
+    generateFinalEventLink();
   }, [event]);
+
+  const generateFinalEventLink = async () => {
+    if (!user || !event.id) return;
+
+    setIsGeneratingLink(true);
+    
+    try {
+      // Generate unique slug
+      const eventSlug = event.name.toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '');
+      const uniqueSlug = `${eventSlug}-${Date.now().toString(36)}`;
+
+      console.log('Generating final slug:', uniqueSlug);
+
+      // Update event with final slug and mark as active
+      const { error: updateError } = await supabase
+        .from('events')
+        .update({ 
+          slug: uniqueSlug,
+          status: 'active'
+        })
+        .eq('id', event.id)
+        .eq('organization_id', user.id);
+
+      if (updateError) {
+        console.error('Failed to update event slug:', updateError);
+        toast({
+          title: "Error",
+          description: "Failed to generate event link. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Generate the final event URL
+      const baseUrl = window.location.origin;
+      const finalUrl = `${baseUrl}/event/${uniqueSlug}`;
+      setEventUrl(finalUrl);
+      setLinkGenerated(true);
+      
+      console.log('Event link generated successfully:', finalUrl);
+      
+      toast({
+        title: "Success!",
+        description: "Your event is now live and ready to share.",
+      });
+
+    } catch (error) {
+      console.error('Error generating event link:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate event link. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingLink(false);
+    }
+  };
 
   const copyToClipboard = async () => {
     try {
@@ -69,10 +129,15 @@ export const LinkGeneration = ({ onBack, event, onViewEvent, onBackToDashboard }
             
             <div className="mb-8">
               <h1 className="text-4xl font-bold bg-gradient-primary bg-clip-text text-transparent mb-2">
-                Event Created Successfully!
+                {isGeneratingLink ? 'Generating Event Link...' : linkGenerated ? 'Event Created Successfully!' : 'Finalizing Event...'}
               </h1>
               <p className="text-muted-foreground">
-                Your unique event link is ready to share with attendees
+                {isGeneratingLink 
+                  ? 'Please wait while we generate your unique event link'
+                  : linkGenerated 
+                    ? 'Your unique event link is ready to share with attendees'
+                    : 'Setting up your event for public access'
+                }
               </p>
             </div>
 

@@ -2,8 +2,9 @@ import { useState } from "react";
 import { PageTransition } from "@/components/ui/page-transition";
 import { GradientButton } from "@/components/ui/gradient-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Calendar, Users, Settings } from "lucide-react";
+import { PlusCircle, Calendar, Users, Settings, LogOut } from "lucide-react";
 import { Event } from "@/types/event";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface DashboardProps {
   onCreateEvent: () => void;
@@ -11,6 +12,12 @@ interface DashboardProps {
 }
 
 export const Dashboard = ({ onCreateEvent, events }: DashboardProps) => {
+  const { user, signOut } = useAuth();
+  
+  const handleSignOut = async () => {
+    await signOut();
+  };
+
   return (
     <PageTransition>
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/20">
@@ -29,8 +36,17 @@ export const Dashboard = ({ onCreateEvent, events }: DashboardProps) => {
               <div className="flex items-center gap-4">
                 <div className="px-4 py-2 bg-card rounded-lg border shadow-card">
                   <span className="text-sm text-muted-foreground">Organization</span>
-                  <p className="font-semibold">Demo Company</p>
+                  <p className="font-semibold">{user?.user_metadata?.organization_name || 'Your Organization'}</p>
                 </div>
+                <GradientButton
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSignOut}
+                  className="flex items-center gap-2"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign Out
+                </GradientButton>
               </div>
             </div>
             

@@ -2,8 +2,13 @@ import { useState } from "react";
 import { PageTransition } from "@/components/ui/page-transition";
 import { GradientButton } from "@/components/ui/gradient-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, ArrowRight, Image, Check } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FileUpload } from "@/components/ui/file-upload";
+import { ArrowLeft, ArrowRight, Image, Check, Upload } from "lucide-react";
 import { HeaderBanner } from "@/types/event";
+import { uploadBanner } from "@/lib/storage";
+import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/contexts/AuthContext";
 import techExpoBanner from "@/assets/tech-expo-banner.jpg";
 import healthcareExpoBanner from "@/assets/healthcare-expo-banner.jpg";
 import businessExpoBanner from "@/assets/business-expo-banner.jpg";
@@ -13,11 +18,19 @@ import foodExpoBanner from "@/assets/food-expo-banner.jpg";
 
 interface HeaderSelectionProps {
   onBack: () => void;
-  onNext: (selectedBanner: HeaderBanner) => void;
+  onNext: (selectedBanner: HeaderBanner | { type: 'custom'; url: string }) => void;
+  eventId?: string;
 }
 
-export const HeaderSelection = ({ onBack, onNext }: HeaderSelectionProps) => {
+export const HeaderSelection = ({ onBack, onNext, eventId }: HeaderSelectionProps) => {
+  const { user } = useAuth();
   const [selectedBanner, setSelectedBanner] = useState<HeaderBanner | null>(null);
+  const [customBannerUrl, setCustomBannerUrl] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'preset' | 'upload'>('preset');
 
   const banners: HeaderBanner[] = [
     {
@@ -58,9 +71,102 @@ export const HeaderSelection = ({ onBack, onNext }: HeaderSelectionProps) => {
     }
   ];
 
-  const handleNext = () => {
-    if (selectedBanner) {
+  const handleFileSelect = (file: File) => {
+    setUploadedFile(file);
+    setUploadError('');
+    
+    // Create preview URL
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    setSelectedBanner(null);
+  };
+
+  const handleFileRemove = () => {
+    setUploadedFile(null);
+    setCustomBannerUrl(null);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+  };
+
+  const handleUploadAndSave = async () => {
+    console.log('Upload started:', { uploadedFile, eventId, user });
+    if (!uploadedFile || !eventId) {
+      console.log('Missing requirements:', { uploadedFile: !!uploadedFile, eventId: !!eventId });
+      setUploadError('Missing file or event ID');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError('');
+
+    try {
+      const { url, error } = await uploadBanner(uploadedFile, eventId);
+      
+      if (error) {
+        setUploadError(error);
+        return;
+      }
+
+      if (url) {
+        // Update event in database with banner URL
+        const { error: updateError } = await supabase
+          .from('events')
+          .update({ banner_url: url, status: 'banner_selected' })
+          .eq('id', eventId)
+          .eq('organization_id', user?.id);
+
+        if (updateError) {
+          console.error('Database update error:', updateError);
+          setUploadError('Failed to save banner to event');
+          return;
+        }
+
+        console.log('Banner saved to database successfully');
+        setCustomBannerUrl(url);
+        onNext({ type: 'custom', url });
+      }
+    } catch (error) {
+      setUploadError('Upload failed. Please try again.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handlePresetNext = async () => {
+    if (!selectedBanner || !eventId) return;
+
+    try {
+      // Update event in database with preset banner
+      const { error: updateError } = await supabase
+        .from('events')
+        .update({ banner_url: selectedBanner.image, status: 'banner_selected' })
+        .eq('id', eventId)
+        .eq('organization_id', user?.id);
+
+      if (updateError) {
+        setUploadError('Failed to save banner to event');
+        return;
+      }
+
       onNext(selectedBanner);
+    } catch (error) {
+      setUploadError('Failed to save banner. Please try again.');
+    }
+  };
+
+  const canProceed = () => {
+    if (activeTab === 'preset') return selectedBanner !== null;
+    if (activeTab === 'upload') return customBannerUrl !== null;
+    return false;
+  };
+
+  const handleNext = () => {
+    if (activeTab === 'preset') {
+      handlePresetNext();
+    } else if (customBannerUrl) {
+      onNext({ type: 'custom', url: customBannerUrl });
     }
   };
 
@@ -128,54 +234,108 @@ export const HeaderSelection = ({ onBack, onNext }: HeaderSelectionProps) => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Image className="h-5 w-5 text-primary" />
-                Professional Header Banners
+                Choose Your Event Banner
               </CardTitle>
               <CardDescription>
-                Each design is crafted for different expo genres and audiences
+                Select from professional templates or upload your own custom banner
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {banners.map((banner) => (
-                  <div
-                    key={banner.id}
-                    className={`relative group cursor-pointer animate-scale-in ${
-                      selectedBanner?.id === banner.id
-                        ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
-                        : ""
-                    }`}
-                    onClick={() => setSelectedBanner(banner)}
-                  >
-                    <Card className="border-0 shadow-card hover:shadow-elegant transition-all duration-300 overflow-hidden">
-                      <div className="relative">
-                        <img
-                          src={banner.image}
-                          alt={banner.name}
-                          className="w-full h-48 object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                        <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
-                          <h3 className="font-bold text-lg mb-1">{banner.name}</h3>
-                          <p className="text-sm text-white/80">{banner.category}</p>
-                        </div>
-                        {selectedBanner?.id === banner.id && (
-                          <div className="absolute top-3 right-3 w-8 h-8 bg-primary rounded-full flex items-center justify-center animate-scale-in">
-                            <Check className="h-5 w-5 text-primary-foreground" />
+              <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'preset' | 'upload')} className="w-full">
+                <TabsList className="grid w-full grid-cols-2 mb-6">
+                  <TabsTrigger value="preset" className="flex items-center gap-2">
+                    <Image className="h-4 w-4" />
+                    Template Banners
+                  </TabsTrigger>
+                  <TabsTrigger value="upload" className="flex items-center gap-2">
+                    <Upload className="h-4 w-4" />
+                    Upload Custom
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="preset" className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {banners.map((banner) => (
+                      <div
+                        key={banner.id}
+                        className={`relative group cursor-pointer animate-scale-in ${
+                          selectedBanner?.id === banner.id && activeTab === 'preset'
+                            ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                            : ""
+                        }`}
+                        onClick={() => {
+                          setSelectedBanner(banner);
+                          setCustomBannerUrl(null);
+                          handleFileRemove();
+                        }}
+                      >
+                        <Card className="border-0 shadow-card hover:shadow-elegant transition-all duration-300 overflow-hidden">
+                          <div className="relative">
+                            <img
+                              src={banner.image}
+                              alt={banner.name}
+                              className="w-full h-48 object-cover transition-transform duration-300 group-hover:scale-105"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                            <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
+                              <h3 className="font-bold text-lg mb-1">{banner.name}</h3>
+                              <p className="text-sm text-white/80">{banner.category}</p>
+                            </div>
+                            {selectedBanner?.id === banner.id && activeTab === 'preset' && (
+                              <div className="absolute top-3 right-3 w-8 h-8 bg-primary rounded-full flex items-center justify-center animate-scale-in">
+                                <Check className="h-5 w-5 text-primary-foreground" />
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </Card>
                       </div>
-                    </Card>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </TabsContent>
+
+                <TabsContent value="upload" className="space-y-6">
+                  <FileUpload
+                    onFileSelect={handleFileSelect}
+                    onFileRemove={handleFileRemove}
+                    preview={previewUrl}
+                    loading={isUploading}
+                    maxSize={10}
+                  />
+                  
+                  {uploadedFile && !customBannerUrl && (
+                    <div className="text-center">
+                      <GradientButton
+                        onClick={handleUploadAndSave}
+                        disabled={isUploading}
+                        size="lg"
+                        className="flex items-center gap-2"
+                      >
+                        <Upload className="h-4 w-4" />
+                        Upload Banner
+                      </GradientButton>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
               
-              {selectedBanner && (
+              {uploadError && (
+                <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                  <p className="text-sm text-destructive">{uploadError}</p>
+                </div>
+              )}
+              
+              {canProceed() && (
                 <div className="mt-8 p-6 bg-primary/10 rounded-lg border border-primary/20 animate-fade-in">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-semibold text-primary mb-1">Selected: {selectedBanner.name}</h4>
+                      <h4 className="font-semibold text-primary mb-1">
+                        {activeTab === 'preset' && selectedBanner ? `Selected: ${selectedBanner.name}` : 'Custom Banner Ready'}
+                      </h4>
                       <p className="text-sm text-muted-foreground">
-                        Perfect for {selectedBanner.category.toLowerCase()} events
+                        {activeTab === 'preset' && selectedBanner 
+                          ? `Perfect for ${selectedBanner.category.toLowerCase()} events`
+                          : 'Your custom banner has been uploaded successfully'
+                        }
                       </p>
                     </div>
                     <GradientButton
@@ -200,10 +360,10 @@ export const HeaderSelection = ({ onBack, onNext }: HeaderSelectionProps) => {
                 <div>
                   <h4 className="font-semibold mb-2">Design Tips</h4>
                   <ul className="space-y-1 text-sm text-muted-foreground">
-                    <li>• Headers are optimized for professional event branding</li>
-                    <li>• Each design includes space for your event title and details</li>
+                    <li>• Template banners are optimized for professional event branding</li>
+                    <li>• Custom uploads should be 1920x600px for best results</li>
                     <li>• All banners are responsive and look great on mobile devices</li>
-                    <li>• You can customize colors and text after generation</li>
+                    <li>• Supported formats: JPG, PNG, WebP (max 10MB)</li>
                   </ul>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { PageTransition } from "@/components/ui/page-transition";
 import { GradientButton } from "@/components/ui/gradient-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,16 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, ArrowRight, Plus, Trash2, HelpCircle, CheckSquare, Type, Tag, Star, ToggleLeft, Phone, Mail, ListCollapse, Users, Building, Columns, Square } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus, Trash2, HelpCircle, CheckSquare, Type, Tag, Star, ToggleLeft, Phone, Mail, ListCollapse, Users, Building, Columns, Square, Edit3, X } from "lucide-react";
 import { Question, FormRow } from "@/types/event";
+import { saveEventQuestions } from "@/lib/questions";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
 
 interface QuestionnaireBuilderProps {
   onBack: () => void;
   onNext: (questions: Question[]) => void;
+  eventId: string;
 }
 
 interface QuestionPanel {
@@ -29,12 +34,15 @@ interface DraggedItem {
   data: Question | QuestionPanel;
 }
 
-export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderProps) => {
+export const QuestionnaireBuilder = ({ onBack, onNext, eventId }: QuestionnaireBuilderProps) => {
+  const { user } = useAuth();
   const [formPages, setFormPages] = useState<Question[][][]>([[]]); // Pages of rows of columns
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [draggedItem, setDraggedItem] = useState<DraggedItem | null>(null);
   const [formValues, setFormValues] = useState<Record<string, any>>({});
   const [dragPosition, setDragPosition] = useState<{ rowIndex: number; columnIndex: number; position: 'left' | 'right' | 'center' } | null>(null);
+  const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   
   const currentRows = formPages[currentPageIndex] || [];
   const currentQuestions = currentRows.flat().flat(); // Flatten rows and columns to get all questions
@@ -126,10 +134,29 @@ export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderPro
     if (!draggedItem) return;
 
     const questions = draggedItem.type === 'question' 
-      ? [{ ...(draggedItem.data as Question), id: `${(draggedItem.data as Question).id}-${Date.now()}` }]
+      ? [{
+          ...(draggedItem.data as Question),
+          id: `${(draggedItem.data as Question).id}-${Date.now()}`,
+          isFromMaster: true,
+          masterQuestionId: (draggedItem.data as Question).id,
+          originalText: (draggedItem.data as Question).question,
+          originalOptions: (draggedItem.data as Question).options,
+          originalPlaceholder: (draggedItem.data as Question).placeholder,
+          originalMaxRating: (draggedItem.data as Question).maxRating,
+          originalMaxTags: (draggedItem.data as Question).maxTags,
+          isModified: false,
+        }]
       : (draggedItem.data as QuestionPanel).questions.map(q => ({
           ...q,
-          id: `${q.id}-${Date.now()}-${Math.random()}`
+          id: `${q.id}-${Date.now()}-${Math.random()}`,
+          isFromMaster: true,
+          masterQuestionId: q.id,
+          originalText: q.question,
+          originalOptions: q.options,
+          originalPlaceholder: q.placeholder,
+          originalMaxRating: q.maxRating,
+          originalMaxTags: q.maxTags,
+          isModified: false,
         }));
 
     setFormPages(prev => {
@@ -175,6 +202,63 @@ export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderPro
     setDragPosition(null);
   };
 
+  const editQuestion = (question: Question) => {
+    setEditingQuestion({ ...question });
+    setIsEditDialogOpen(true);
+  };
+
+  const updateQuestion = (updatedQuestion: Question) => {
+    setFormPages(prev => {
+      const newPages = [...prev];
+      const currentPage = newPages[currentPageIndex];
+      
+      const newPage = currentPage.map(row => 
+        row.map(column => 
+          column.map(q => {
+            if (q.id === updatedQuestion.id) {
+              // Check if this is a modification from the original
+              const textChanged = q.originalText && updatedQuestion.question !== q.originalText;
+              const optionsChanged = q.originalOptions && 
+                JSON.stringify(updatedQuestion.options) !== JSON.stringify(q.originalOptions);
+              
+              // Check for placeholder changes (for text-based inputs)
+              const hasPlaceholderType = ['text', 'email', 'tel', 'textarea'].includes(updatedQuestion.type);
+              const placeholderChanged = hasPlaceholderType && updatedQuestion.placeholder !== q.originalPlaceholder;
+              
+              // Check for other property changes
+              const ratingChanged = updatedQuestion.type === 'rating' && updatedQuestion.maxRating !== q.originalMaxRating;
+              const tagsChanged = updatedQuestion.type === 'tags' && updatedQuestion.maxTags !== q.originalMaxTags;
+              
+              const isModified = q.isFromMaster && (
+                textChanged || optionsChanged || placeholderChanged || ratingChanged || tagsChanged
+              );
+              
+              return {
+                ...updatedQuestion,
+                isModified,
+                // Preserve original values for comparison
+                originalText: q.originalText,
+                originalOptions: q.originalOptions,
+                originalPlaceholder: q.originalPlaceholder,
+                originalMaxRating: q.originalMaxRating,
+                originalMaxTags: q.originalMaxTags,
+                masterQuestionId: q.masterQuestionId,
+                isFromMaster: q.isFromMaster,
+              };
+            }
+            return q;
+          })
+        )
+      );
+      
+      newPages[currentPageIndex] = newPage;
+      return newPages;
+    });
+    
+    setIsEditDialogOpen(false);
+    setEditingQuestion(null);
+  };
+
   const removeQuestion = (questionId: string) => {
     setFormPages(prev => {
       const newPages = [...prev];
@@ -196,10 +280,59 @@ export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderPro
     setCurrentPageIndex(formPages.length);
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     const allQuestions = formPages.flat().flat().flat(); // Flatten all levels
     if (allQuestions.length === 0) return;
-    onNext(allQuestions);
+
+    if (!user || !eventId) {
+      alert('Missing user or event information');
+      return;
+    }
+
+    try {
+      console.log('Saving questions to database:', allQuestions);
+      
+      // Convert questions to proper format and assign unique IDs
+      const questionsWithIds = allQuestions.map((q, index) => ({
+        ...q,
+        id: q.id || `question-${Date.now()}-${index}`,
+        question: q.question || q.text || `Question ${index + 1}`,
+        type: q.type,
+        options: q.options || (q.type === 'dropdown' || q.type === 'multiple-choice' || q.type === 'checkbox_group' ? ['Option 1', 'Option 2'] : null),
+        required: q.required || false,
+        page: Math.floor(index / 5) + 1 // Group questions into pages of 5
+      }));
+
+      // Save to database
+      const { success, error } = await saveEventQuestions(
+        eventId, 
+        questionsWithIds, 
+        user.id
+      );
+
+      if (!success) {
+        console.error('Failed to save questions:', error);
+        alert(`Failed to save questions: ${error}`);
+        return;
+      }
+
+      // Update event status
+      const { error: updateError } = await supabase
+        .from('events')
+        .update({ status: 'form_built' })
+        .eq('id', eventId)
+        .eq('organization_id', user.id);
+
+      if (updateError) {
+        console.error('Failed to update event status:', updateError);
+      }
+
+      console.log('Questions saved successfully');
+      onNext(questionsWithIds);
+    } catch (error) {
+      console.error('Error saving questions:', error);
+      alert('Failed to save questions. Please try again.');
+    }
   };
 
   const getQuestionIcon = (type: Question['type']) => {
@@ -222,7 +355,10 @@ export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderPro
         ? ['Option 1', 'Option 2', 'Option 3'] 
         : undefined,
       maxRating: questionType === 'rating' ? 5 : undefined,
-      maxTags: questionType === 'tags' ? 5 : undefined
+      maxTags: questionType === 'tags' ? 5 : undefined,
+      // Mark as completely new question
+      isFromMaster: false,
+      isModified: false,
     };
     
     setFormPages(prev => {
@@ -488,6 +624,218 @@ export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderPro
           </div>
         );
     }
+  };
+
+  // Edit Question Dialog Component
+  const EditQuestionDialog = () => {
+    const [tempQuestion, setTempQuestion] = useState<Question | null>(null);
+
+    // Initialize tempQuestion when editing starts
+    useEffect(() => {
+      if (editingQuestion) {
+        setTempQuestion({ ...editingQuestion });
+      }
+    }, [editingQuestion]);
+
+    if (!editingQuestion || !tempQuestion) return null;
+
+    const handleAddOption = () => {
+      if (tempQuestion.options) {
+        setTempQuestion({
+          ...tempQuestion,
+          options: [...tempQuestion.options, `Option ${tempQuestion.options.length + 1}`]
+        });
+      }
+    };
+
+    const handleRemoveOption = (index: number) => {
+      if (tempQuestion.options) {
+        setTempQuestion({
+          ...tempQuestion,
+          options: tempQuestion.options.filter((_, i) => i !== index)
+        });
+      }
+    };
+
+    const handleUpdateOption = (index: number, value: string) => {
+      if (tempQuestion.options) {
+        const newOptions = [...tempQuestion.options];
+        newOptions[index] = value;
+        setTempQuestion({
+          ...tempQuestion,
+          options: newOptions
+        });
+      }
+    };
+
+    const handleSave = () => {
+      updateQuestion(tempQuestion);
+    };
+
+    const hasOptions = ['dropdown', 'multiple-choice', 'checkbox_group'].includes(tempQuestion.type);
+
+    return (
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Question</DialogTitle>
+            <DialogDescription>
+              Modify the question text, options, and settings
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            {/* Question Text */}
+            <div className="space-y-2">
+              <Label htmlFor="question-text">Question Text</Label>
+              <Textarea
+                id="question-text"
+                value={tempQuestion.question}
+                onChange={(e) => setTempQuestion({ ...tempQuestion, question: e.target.value })}
+                placeholder="Enter your question"
+                className="min-h-[80px]"
+              />
+            </div>
+
+            {/* Placeholder for text inputs */}
+            {(['text', 'textarea', 'email', 'tel'].includes(tempQuestion.type)) && (
+              <div className="space-y-2">
+                <Label htmlFor="placeholder">Placeholder Text</Label>
+                <Input
+                  id="placeholder"
+                  value={tempQuestion.placeholder || ''}
+                  onChange={(e) => setTempQuestion({ ...tempQuestion, placeholder: e.target.value })}
+                  placeholder="Enter placeholder text"
+                />
+              </div>
+            )}
+
+            {/* Required Toggle */}
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="required"
+                checked={tempQuestion.required}
+                onCheckedChange={(checked) => setTempQuestion({ ...tempQuestion, required: checked })}
+              />
+              <Label htmlFor="required">Required field</Label>
+            </div>
+
+            {/* Options Management for dropdown, multiple-choice, checkbox_group */}
+            {hasOptions && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label>Options</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddOption}
+                    className="flex items-center gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Option
+                  </Button>
+                </div>
+                
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {tempQuestion.options?.map((option, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <Input
+                        value={option}
+                        onChange={(e) => handleUpdateOption(index, e.target.value)}
+                        placeholder={`Option ${index + 1}`}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRemoveOption(index)}
+                        className="h-10 w-10 p-0 hover:bg-destructive hover:text-destructive-foreground"
+                        disabled={tempQuestion.options && tempQuestion.options.length <= 1}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                
+                {tempQuestion.options && tempQuestion.options.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    At least one option is required for this question type.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Rating Scale Max for rating type */}
+            {tempQuestion.type === 'rating' && (
+              <div className="space-y-2">
+                <Label htmlFor="max-rating">Maximum Rating</Label>
+                <Select
+                  value={String(tempQuestion.maxRating || 5)}
+                  onValueChange={(value) => setTempQuestion({ ...tempQuestion, maxRating: parseInt(value) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                      <SelectItem key={num} value={String(num)}>
+                        {num} Stars
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Max Tags for tags type */}
+            {tempQuestion.type === 'tags' && (
+              <div className="space-y-2">
+                <Label htmlFor="max-tags">Maximum Tags</Label>
+                <Select
+                  value={String(tempQuestion.maxTags || 5)}
+                  onValueChange={(value) => setTempQuestion({ ...tempQuestion, maxTags: parseInt(value) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[3, 4, 5, 6, 7, 8, 9, 10, 15, 20].map((num) => (
+                      <SelectItem key={num} value={String(num)}>
+                        {num} Tags
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Preview Section */}
+            <div className="border rounded-lg p-4 bg-muted/20">
+              <Label className="text-sm font-medium mb-3 block">Preview</Label>
+              <QuestionPreview question={tempQuestion} index={0} />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!tempQuestion.question.trim() || (hasOptions && (!tempQuestion.options || tempQuestion.options.length === 0))}
+            >
+              Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
   };
 
   return (
@@ -851,6 +1199,27 @@ export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderPro
                                               {getQuestionIcon(question.type)}
                                               <span className="capitalize">{question.type.replace(/[_-]/g, ' ')}</span>
                                             </div>
+                                            {/* Status indicators */}
+                                            {question.isModified && (
+                                              <div className="flex items-center gap-1 text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                                                <Edit3 className="h-3 w-3" />
+                                                <span>Modified</span>
+                                              </div>
+                                            )}
+                                            {!question.isFromMaster && (
+                                              <div className="flex items-center gap-1 text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+                                                <Plus className="h-3 w-3" />
+                                                <span>New</span>
+                                              </div>
+                                            )}
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => editQuestion(question)}
+                                              className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
+                                            >
+                                              <Edit3 className="h-3 w-3" />
+                                            </Button>
                                             <Button
                                               variant="outline"
                                               size="sm"
@@ -902,6 +1271,9 @@ export const QuestionnaireBuilder = ({ onBack, onNext }: QuestionnaireBuilderPro
 
         </div>
       </div>
+
+      {/* Edit Question Dialog */}
+      <EditQuestionDialog />
     </PageTransition>
   );
 };

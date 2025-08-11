@@ -7,6 +7,17 @@ export interface Question {
   placeholder?: string;
   maxTags?: number;
   maxRating?: number;
+  page?: number;                   // Page number for multi-page forms
+  
+  // New fields to track question origin and modifications
+  isFromMaster?: boolean;          // true if from questions_master, false if completely new
+  masterQuestionId?: string;       // ID from questions_master if applicable
+  originalText?: string;           // Original text from master (for comparison)
+  originalOptions?: string[];      // Original options from master (for comparison)
+  originalPlaceholder?: string;    // Original placeholder from master (for comparison)
+  originalMaxRating?: number;      // Original maxRating from master (for comparison)
+  originalMaxTags?: number;        // Original maxTags from master (for comparison)
+  isModified?: boolean;            // true if question was edited from its master version
 }
 
 export interface FormRow {
