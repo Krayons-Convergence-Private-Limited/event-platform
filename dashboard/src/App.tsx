@@ -12,6 +12,8 @@ import PublicEventPage from "./pages/PublicEventPage";
 
 const queryClient = new QueryClient();
 
+
+// add
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
