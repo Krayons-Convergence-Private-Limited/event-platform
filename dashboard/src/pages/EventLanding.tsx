@@ -90,16 +90,16 @@ export const EventLanding = ({ eventId, eventSlug }: EventLandingProps) => {
 
         // Draw user name (large, bold, black) - increased by 25%
         ctx.fillStyle = '#000000';
-        ctx.font = 'bold 60px Arial';
+        ctx.font = 'bold 40px Arial';
         ctx.textAlign = 'center';
         ctx.fillText(registrationData.userName, centerX, centerY - 100);
 
         // Draw registration ID (medium, bold, black) - increased by 25%
-        ctx.font = 'bold 40px Arial';
+        ctx.font = 'bold 30px Arial';
         ctx.fillText(registrationData.registrationId, centerX, centerY - 25);
 
         // Draw QR code (200x200, centered below text) - increased by 25%
-        const qrSize = 200;
+        const qrSize = 180;
         ctx.drawImage(qrImg, centerX - qrSize/2, centerY + 25, qrSize, qrSize);
 
         // Trigger download
