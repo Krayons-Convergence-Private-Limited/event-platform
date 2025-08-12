@@ -1,8 +1,17 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  await Supabase.initialize(
+    url: 'https://xpdxwxspqeluvlmcdray.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhwZHh3eHNwcWVsdXZsbWNkcmF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ1NzU3NTUsImV4cCI6MjA3MDE1MTc1NX0.9T8ob1AGc17OxZJeneZyuqArACOIh9n008nsiWGNXeQ',
+  );
+  
   runApp(const CheckInApp());
 }
 
@@ -257,6 +266,11 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   MobileScannerController controller = MobileScannerController();
   String? scannedData;
   bool flashOn = false;
+  bool isValidated = false;
+  bool isValidating = false;
+  bool isInvalid = false;
+  String? errorMessage;
+  Map<String, dynamic>? userDetails;
 
   @override
   void initState() {
@@ -278,11 +292,93 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     }
   }
 
-  void _onDetect(BarcodeCapture capture) {
+  void _onDetect(BarcodeCapture capture) async {
     final List<Barcode> barcodes = capture.barcodes;
     if (barcodes.isNotEmpty && barcodes.first.rawValue != null) {
       setState(() {
         scannedData = barcodes.first.rawValue;
+      });
+      await _validateQRCode(barcodes.first.rawValue!);
+    }
+  }
+
+  Future<void> _validateQRCode(String qrData) async {
+    if (isValidating) return;
+    
+    setState(() {
+      isValidating = true;
+      isValidated = false;
+      isInvalid = false;
+      userDetails = null;
+      errorMessage = null;
+    });
+
+    try {
+      // First, try to parse the JSON
+      Map<String, dynamic> qrJson;
+      try {
+        qrJson = jsonDecode(qrData);
+      } catch (e) {
+        throw Exception('Invalid QR code format - not valid JSON');
+      }
+
+      // Check if required fields exist
+      if (!qrJson.containsKey('userId') || 
+          !qrJson.containsKey('eventId') || 
+          !qrJson.containsKey('registrationId') ||
+          !qrJson.containsKey('name')) {
+        throw Exception('QR code missing required fields (userId, eventId, registrationId, name)');
+      }
+
+      final String userId = qrJson['userId'];
+      final String eventId = qrJson['eventId'];
+
+      if (userId.isEmpty || eventId.isEmpty) {
+        throw Exception('QR code contains empty required fields');
+      }
+
+      // Validate against database
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('event_responses')
+          .select()
+          .eq('user_id', userId)
+          .eq('event_id', eventId)
+          .single();
+
+      setState(() {
+        isValidated = true;
+        userDetails = {
+          'name': qrJson['name'] ?? 'Unknown',
+          'eventId': eventId,
+          'registrationId': qrJson['registrationId'] ?? 'N/A',
+          'email': qrJson['email'] ?? '',
+          'phone': qrJson['phone'] ?? '',
+        };
+      });
+    } catch (e) {
+      String errorMsg = 'Invalid QR Code';
+      if (e.toString().contains('JSON')) {
+        errorMsg = 'QR code format not recognized';
+      } else if (e.toString().contains('missing required fields')) {
+        errorMsg = 'QR code incomplete - missing required information';
+      } else if (e.toString().contains('empty required fields')) {
+        errorMsg = 'QR code contains invalid data';
+      } else if (e.toString().contains('No rows found')) {
+        errorMsg = 'Registration not found in database';
+      } else {
+        errorMsg = 'Registration validation failed';
+      }
+      
+      setState(() {
+        isValidated = false;
+        isInvalid = true;
+        userDetails = null;
+        errorMessage = errorMsg;
+      });
+    } finally {
+      setState(() {
+        isValidating = false;
       });
     }
   }
@@ -313,118 +409,410 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Theme.of(context).colorScheme.primaryContainer,
-            child: Row(
+      body: isValidated && userDetails != null
+          ? _buildFullSuccessView()
+          : isInvalid && errorMessage != null
+              ? _buildFullErrorView()
+              : Column(
               children: [
-                Icon(
-                  Icons.qr_code_scanner,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Position the QR code within the frame to scan',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 4,
-            child: Container(
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outline,
-                  width: 2,
-                ),
-              ),
-              child: Stack(
-                children: [
-                  MobileScanner(
-                    controller: controller,
-                    onDetect: _onDetect,
-                  ),
-                  CustomPaint(
-                    painter: ScannerOverlayPainter(
-                      borderColor: Theme.of(context).colorScheme.primary,
-                      overlayColor: Colors.black.withValues(alpha: 0.5),
-                    ),
-                    child: Container(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(24),
-                  topRight: Radius.circular(24),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, -5),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  child: Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
+                      Icon(
+                        Icons.qr_code_scanner,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
                         child: Text(
-                          widget.venueName,
+                          'Position the QR code within the frame to scan',
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.onPrimaryContainer,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Scanned Data',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: Container(
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                        color: Theme.of(context).colorScheme.outline,
+                        width: 2,
                       ),
                     ),
+                    child: Stack(
+                      children: [
+                        MobileScanner(
+                          controller: controller,
+                          onDetect: _onDetect,
+                        ),
+                        CustomPaint(
+                          painter: ScannerOverlayPainter(
+                            borderColor: Theme.of(context).colorScheme.primary,
+                            overlayColor: Colors.black.withValues(alpha: 0.5),
+                          ),
+                          child: Container(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                  width: double.infinity,
+                  constraints: BoxConstraints(
+                    minHeight: 200,
+                    maxHeight: 300,
+                  ),
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(24),
+                      topRight: Radius.circular(24),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, -5),
+                      ),
+                    ],
+                  ),
+                  child: _buildScanningView(),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildFullSuccessView() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.green.withValues(alpha: 0.05),
+            Theme.of(context).colorScheme.surface,
+          ],
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(30),
+            decoration: BoxDecoration(
+              color: Colors.green.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.check_circle,
+              size: 80,
+              color: Colors.green,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'CHECK-IN SUCCESSFUL',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: Colors.green,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Welcome to ${widget.venueName}',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 40),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.green.withValues(alpha: 0.3),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Registration Details',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _buildDetailRow('Name', userDetails!['name'] ?? 'N/A'),
+                const SizedBox(height: 16),
+                _buildDetailRow('Registration ID', userDetails!['registrationId'] ?? 'N/A'),
+                const SizedBox(height: 16),
+                _buildDetailRow('Event ID', userDetails!['eventId'] ?? 'N/A'),
+                const SizedBox(height: 16),
+                _buildDetailRow('Venue', widget.venueName),
+              ],
+            ),
+          ),
+          const SizedBox(height: 40),
+          ElevatedButton.icon(
+            onPressed: () {
+              setState(() {
+                isValidated = false;
+                isInvalid = false;
+                userDetails = null;
+                scannedData = null;
+                errorMessage = null;
+              });
+            },
+            icon: Icon(Icons.qr_code_scanner),
+            label: Text('Scan Another Code'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFullErrorView() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.red.withValues(alpha: 0.05),
+            Theme.of(context).colorScheme.surface,
+          ],
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(30),
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.close,
+              size: 80,
+              color: Colors.red,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'INVALID QR CODE',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: Colors.red,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Please scan a valid registration code',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 40),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.red.withValues(alpha: 0.3),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      color: Colors.red,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Error Details',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  errorMessage ?? 'Unknown error occurred',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.red.withValues(alpha: 0.7),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Make sure the QR code is from a valid event registration',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.red.withValues(alpha: 0.8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 40),
+          ElevatedButton.icon(
+            onPressed: () {
+              setState(() {
+                isValidated = false;
+                isInvalid = false;
+                userDetails = null;
+                scannedData = null;
+                errorMessage = null;
+              });
+            },
+            icon: Icon(Icons.qr_code_scanner),
+            label: Text('Scan Again'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScanningView() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                widget.venueName,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(
+          isValidating ? 'Validating...' : 'Scanned Data',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+              ),
+            ),
+            child: isValidating
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(),
+                        const SizedBox(height: 16),
+                        Text('Validating QR code...'),
+                      ],
+                    ),
+                  )
+                : SingleChildScrollView(
                     child: Text(
                       scannedData ?? 'No QR code scanned yet',
                       style: TextStyle(
@@ -436,12 +824,35 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                       ),
                     ),
                   ),
-                ],
-              ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            '$label:',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
-        ],
-      ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

@@ -224,6 +224,13 @@ export const HeaderSelection = ({ onBack, onNext, eventId }: HeaderSelectionProp
                 <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center text-muted-foreground text-sm">
                   4
                 </div>
+                <span className="text-muted-foreground">Media & Email</span>
+              </div>
+              <div className="w-12 h-0.5 bg-border"></div>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center text-muted-foreground text-sm">
+                  5
+                </div>
                 <span className="text-muted-foreground">Generate Link</span>
               </div>
             </div>
@@ -343,7 +350,7 @@ export const HeaderSelection = ({ onBack, onNext, eventId }: HeaderSelectionProp
                       size="lg"
                       className="flex items-center gap-2"
                     >
-                      Generate Event Link
+                      Continue to Media Setup
                       <ArrowRight className="h-4 w-4" />
                     </GradientButton>
                   </div>

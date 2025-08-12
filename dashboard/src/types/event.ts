@@ -41,6 +41,13 @@ export interface Event {
   headerBanner?: string;
   uniqueId: string;
   createdAt: string;
+  // New media management fields
+  banner_url?: string;
+  badge_template_url?: string;
+  email_media_url?: string;
+  email_subject?: string;
+  email_body?: string;
+  email_template_variables?: Record<string, string>;
 }
 
 export interface HeaderBanner {

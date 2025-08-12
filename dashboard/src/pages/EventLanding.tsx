@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { PageTransition } from "@/components/ui/page-transition";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +30,10 @@ interface EventData {
   event_date_start: string;
   event_date_end: string;
   banner_url: string;
+  badge_template_url?: string;
+  email_media_url?: string;
+  email_subject?: string;
+  email_body?: string;
 }
 
 export const EventLanding = ({ eventId, eventSlug }: EventLandingProps) => {
@@ -52,10 +56,71 @@ export const EventLanding = ({ eventId, eventSlug }: EventLandingProps) => {
     userPhone: string;
     qrCode: string;
   } | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     loadEventData();
   }, [eventId, eventSlug]);
+
+  // Function to generate badge image
+  const generateBadgeImage = async () => {
+    if (!canvasRef.current || !event.badge_template_url || !registrationData) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Load the badge template image
+    const badgeImg = new Image();
+    badgeImg.crossOrigin = 'anonymous';
+    
+    badgeImg.onload = async () => {
+      // Set canvas size to match image
+      canvas.width = badgeImg.width;
+      canvas.height = badgeImg.height;
+
+      // Draw the badge template
+      ctx.drawImage(badgeImg, 0, 0);
+
+      // Load and draw QR code
+      const qrImg = new Image();
+      qrImg.onload = () => {
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+
+        // Draw user name (large, bold, black) - increased by 25%
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 60px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(registrationData.userName, centerX, centerY - 100);
+
+        // Draw registration ID (medium, bold, black) - increased by 25%
+        ctx.font = 'bold 40px Arial';
+        ctx.fillText(registrationData.registrationId, centerX, centerY - 25);
+
+        // Draw QR code (200x200, centered below text) - increased by 25%
+        const qrSize = 200;
+        ctx.drawImage(qrImg, centerX - qrSize/2, centerY + 25, qrSize, qrSize);
+
+        // Trigger download
+        downloadBadgeImage();
+      };
+      qrImg.src = registrationData.qrCode;
+    };
+
+    badgeImg.src = event.badge_template_url;
+  };
+
+  // Function to download the generated badge image
+  const downloadBadgeImage = () => {
+    if (!canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const link = document.createElement('a');
+    link.download = `${registrationData?.userName || 'badge'}_${registrationData?.registrationId || 'badge'}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
 
   const loadEventData = async () => {
     try {
@@ -680,104 +745,61 @@ export const EventLanding = ({ eventId, eventSlug }: EventLandingProps) => {
       <PageTransition>
         <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/20 flex items-center justify-center">
           <div className="container mx-auto px-6 py-12 max-w-4xl">
-            {/* Digital Entry Badge */}
-            <Card className="border-2 border-primary bg-gradient-to-br from-primary/5 to-primary/10">
-              <CardHeader className="text-center bg-primary text-primary-foreground">
-                <CardTitle className="flex items-center justify-center gap-2">
-                  <QrCode className="h-5 w-5" />
-                  DIGITAL ENTRY BADGE
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-                  {/* User Info Side */}
-                  <div className="space-y-4">
-                    <div className="text-center md:text-left">
-                      <h2 className="text-2xl font-bold text-primary mb-2">
-                        Dear {registrationData.userName}
+            {/* Digital Entry Badge - Only show uploaded badge */}
+            {event.badge_template_url ? (
+              <div className="space-y-6">
+                <div className="relative max-w-2xl mx-auto">
+                  <img 
+                    src={event.badge_template_url} 
+                    alt="Event Badge Template"
+                    className="w-full object-cover rounded-lg"
+                  />
+                  {/* Simple center overlay with name, registration ID, and QR code */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-center">
+                      {/* User Name */}
+                      <h2 className="text-5xl font-bold text-black mb-4">
+                        {registrationData.userName}
                       </h2>
-                      <div className="bg-white p-3 rounded-lg border">
-                        <p className="text-sm text-muted-foreground">Your Registration ID:</p>
-                        <p className="text-xl font-bold text-primary">{registrationData.registrationId}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="text-sm space-y-2">
-                      <p className="font-medium">Thank you for registering to visit {event.name}.</p>
-                      <p>We are excited to welcome you to the premier event for automation and industrial technology. Get ready to explore the latest innovations, network with industry leaders, and discover cutting-edge solutions that can transform your business.</p>
-                      <p className="text-primary font-medium">The visitor badge can be used for all events</p>
-                    </div>
-                  </div>
-
-                  {/* QR Code Side */}
-                  <div className="flex flex-col items-center space-y-4">
-                    <div className="bg-white p-4 rounded-lg border shadow-sm">
+                      
+                      {/* Registration ID */}
+                      <p className="text-3xl font-bold text-black mb-8">
+                        {registrationData.registrationId}
+                      </p>
+                      
+                      {/* QR Code */}
                       <img 
                         src={registrationData.qrCode} 
                         alt="Entry QR Code"
-                        className="w-48 h-48"
+                        className="w-52 h-52 mx-auto"
                       />
                     </div>
-                    <p className="text-xs text-center text-muted-foreground">
-                      Scan this QR code at the venue entrance
-                    </p>
                   </div>
                 </div>
 
                 {/* Download Button */}
-                <div className="mt-6 text-center">
-                  <GradientButton size="lg" className="mb-4">
+                <div className="text-center">
+                  <GradientButton 
+                    size="lg" 
+                    onClick={generateBadgeImage}
+                    className="mb-4"
+                  >
                     <Download className="h-4 w-4 mr-2" />
-                    Download Digital Badge
+                    Download Badge Image
                   </GradientButton>
                 </div>
 
-                {/* Event Details */}
-                <div className="mt-6 bg-white rounded-lg p-4 border">
-                  <h3 className="font-bold text-lg mb-3">Event Details:</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <p className="font-medium text-muted-foreground">Dates</p>
-                      <p className="font-semibold">
-                        {new Date(event.event_date_start).toLocaleDateString()} - {new Date(event.event_date_end).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="font-medium text-muted-foreground">Event</p>
-                      <p className="font-semibold">{event.name}</p>
-                    </div>
-                    <div>
-                      <p className="font-medium text-muted-foreground">Time</p>
-                      <p className="font-semibold">10:00am - 06:00pm</p>
-                    </div>
-                  </div>
-                  <div className="mt-3">
-                    <p className="font-medium text-muted-foreground">Location</p>
-                    <p className="font-semibold">{event.location}</p>
-                  </div>
-                </div>
-
-                {/* Instructions */}
-                <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-blue-900 mb-2">Your Badge:</h4>
-                  <p className="text-blue-800 text-sm">
-                    You can print your badge from the email attachment or use the digital version for entry at the venue. 
-                    If needed, visit the registration desk on-site for assistance.
-                  </p>
-                </div>
-
-                {/* Footer Message */}
-                <div className="mt-4 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    We look forward to your participation and hope you have a rewarding experience at the expo
-                  </p>
-                  <p className="text-sm font-medium text-primary mt-2">
-                    Best regards,<br />
-                    {event.name} Team
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+                {/* Hidden Canvas for image generation */}
+                <canvas 
+                  ref={canvasRef} 
+                  style={{ display: 'none' }}
+                />
+              </div>
+            ) : (
+              <div className="text-center p-8">
+                <p className="text-muted-foreground">No badge template available for this event.</p>
+              </div>
+            )}
           </div>
         </div>
       </PageTransition>

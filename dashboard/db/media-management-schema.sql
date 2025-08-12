@@ -1,8 +1,8 @@
 -- Media Management Schema for Banners, Badges, and Email Templates
 
 -- Add new columns to events table for media management
-ALTER TABLE events ADD COLUMN IF NOT EXISTS banner_media_url TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS badge_template_url TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS email_media_url TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS email_subject TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS email_body TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS email_template_variables JSONB DEFAULT '{}';

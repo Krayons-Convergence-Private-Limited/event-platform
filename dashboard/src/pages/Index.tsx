@@ -3,13 +3,14 @@ import { Dashboard } from "./Dashboard";
 import { CreateEvent, EventFormData } from "./CreateEvent";
 import { QuestionnaireBuilder } from "./QuestionnaireBuilder";
 import { HeaderSelection } from "./HeaderSelection";
+import { MediaManagement } from "./MediaManagement";
 import { LinkGeneration } from "./LinkGeneration";
 import { EventLanding } from "./EventLanding";
 import { Event, Question, HeaderBanner } from "@/types/event";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 
-type AppState = 'dashboard' | 'create-event' | 'questionnaire' | 'header-selection' | 'link-generation' | 'event-landing';
+type AppState = 'dashboard' | 'create-event' | 'questionnaire' | 'header-selection' | 'media-management' | 'link-generation' | 'event-landing';
 
 const Index = () => {
   const { user } = useAuth();
@@ -84,12 +85,17 @@ const Index = () => {
     
     setEvents(prev => [...prev, completeEvent]);
     setCurrentEventData(completeEvent);
-    setCurrentState('link-generation');
+    setCurrentState('media-management');
   };
 
   const handleViewEvent = (eventId: string) => {
     setCurrentEventId(eventId);
     setCurrentState('event-landing');
+  };
+
+  const handleMediaNext = (updatedEvent: Event) => {
+    setCurrentEventData(updatedEvent);
+    setCurrentState('link-generation');
   };
 
   const handleBackToDashboard = () => {
@@ -104,8 +110,10 @@ const Index = () => {
       return <QuestionnaireBuilder onBack={() => setCurrentState('create-event')} onNext={handleQuestionsNext} eventId={currentEventId} />;
     case 'header-selection':
       return <HeaderSelection onBack={() => setCurrentState('questionnaire')} onNext={handleHeaderNext} eventId={currentEventId} />;
+    case 'media-management':
+      return <MediaManagement onBack={() => setCurrentState('header-selection')} onNext={handleMediaNext} event={currentEventData as Event} />;
     case 'link-generation':
-      return <LinkGeneration onBack={() => setCurrentState('header-selection')} event={currentEventData as Event} onViewEvent={handleViewEvent} onBackToDashboard={handleBackToDashboard} />;
+      return <LinkGeneration onBack={() => setCurrentState('media-management')} event={currentEventData as Event} onViewEvent={handleViewEvent} onBackToDashboard={handleBackToDashboard} />;
     case 'event-landing':
       return <EventLanding eventId={currentEventId} />;
     default:
