@@ -8,6 +8,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { AuthForm } from "@/components/auth/AuthForm";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import PublicEventPage from "./pages/PublicEventPage";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +37,8 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
+            {/* Public event registration route */}
+            <Route path="/events/:slug" element={<PublicEventPage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

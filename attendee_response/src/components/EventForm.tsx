@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback, memo } from 'react'
 import { Event, ProcessedQuestion } from '@/lib/supabase'
 
 interface EventFormProps {
@@ -29,12 +29,12 @@ export default function EventForm({ event, questions }: EventFormProps) {
   const totalPages = Math.max(...Object.keys(questionsByPage).map(Number), 1)
   const currentPageQuestions = questionsByPage[currentPage] || []
 
-  const handleInputChange = (questionId: string, value: string | string[]) => {
+  const handleInputChange = useCallback((questionId: string, value: string | string[]) => {
     setFormData(prev => ({
       ...prev,
       [questionId]: value
     }))
-  }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -66,6 +66,39 @@ export default function EventForm({ event, questions }: EventFormProps) {
     }
   }
 
+  // Memoized input components that only re-render when their specific value changes
+  const TextInput = memo(({ question, value, onChange }: { 
+    question: ProcessedQuestion, 
+    value: string, 
+    onChange: (questionId: string, value: string) => void 
+  }) => (
+    <input
+      type={question.type}
+      id={question.id}
+      value={value}
+      onChange={(e) => onChange(question.id, e.target.value)}
+      placeholder={question.placeholder}
+      required={question.required}
+      className="w-full h-11 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+    />
+  ))
+
+  const TextAreaInput = memo(({ question, value, onChange }: { 
+    question: ProcessedQuestion, 
+    value: string, 
+    onChange: (questionId: string, value: string) => void 
+  }) => (
+    <textarea
+      id={question.id}
+      value={value}
+      onChange={(e) => onChange(question.id, e.target.value)}
+      placeholder={question.placeholder}
+      required={question.required}
+      rows={3}
+      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+    />
+  ))
+
   const renderQuestion = (question: ProcessedQuestion) => {
     const value = formData[question.id] || ''
 
@@ -74,27 +107,19 @@ export default function EventForm({ event, questions }: EventFormProps) {
       case 'email':
       case 'tel':
         return (
-          <input
-            type={question.type}
-            id={question.id}
+          <TextInput
+            question={question}
             value={value as string}
-            onChange={(e) => handleInputChange(question.id, e.target.value)}
-            placeholder={question.placeholder}
-            required={question.required}
-            className="w-full h-11 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            onChange={handleInputChange}
           />
         )
 
       case 'textarea':
         return (
-          <textarea
-            id={question.id}
+          <TextAreaInput
+            question={question}
             value={value as string}
-            onChange={(e) => handleInputChange(question.id, e.target.value)}
-            placeholder={question.placeholder}
-            required={question.required}
-            rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            onChange={handleInputChange}
           />
         )
 

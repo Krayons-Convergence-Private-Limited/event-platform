@@ -140,9 +140,9 @@ export const saveEventQuestions = async (
         event_id: eventId,
         required: question.required || false,
         page_number: question.page || 1,
-        row_number: Math.floor(i / 2), // 2 questions per row
-        column_number: i % 2, // 0 or 1
-        order_in_cell: 0,
+        row_number: question.rowNumber || 0,
+        column_number: question.columnNumber || 0,
+        order_in_cell: question.orderInCell || 0,
       };
 
       // Case 1: Completely new question (never existed in master)
@@ -298,66 +298,65 @@ export const loadEventQuestions = async (eventId: string): Promise<{ questions: 
     }
 
     const questions: Question[] = eventQuestions.map((eq: any) => {
-      // Case 1: Completely new question (type field is not null)
-      if (eq.type) {
-        const customOptions = eq.custom_options;
-        let questionData: Question = {
-          id: eq.id, // Use event_question id for new questions
-          type: eq.type,
-          question: eq.custom_text,
-          required: eq.required,
-          page: eq.page_number,
-          isFromMaster: false,
-          isModified: false,
-        };
+      // Always use event_questions.id as the unique identifier
+      const questionData: Question = {
+        id: eq.id, // Always use event_questions.id for unique identification
+        required: eq.required,
+        page: eq.page_number,
+        rowNumber: eq.row_number,
+        columnNumber: eq.column_number,
+        orderInCell: eq.order_in_cell,
+      } as Question;
 
-        // Parse custom_options based on question type
-        if (customOptions) {
-          if (Array.isArray(customOptions)) {
-            // It's an options array for dropdown/multiple-choice
-            questionData.options = customOptions;
-          } else if (typeof customOptions === 'object') {
-            // It's an object with metadata
-            if (customOptions.placeholder) questionData.placeholder = customOptions.placeholder;
-            if (customOptions.maxRating) questionData.maxRating = customOptions.maxRating;
-            if (customOptions.maxTags) questionData.maxTags = customOptions.maxTags;
-          }
-        }
+      // Case 1: New custom question (question_master_id is null)
+      if (!eq.question_master_id) {
+        // This is a completely new question
+        questionData.type = eq.type;
+        questionData.question = eq.custom_text;
+        questionData.isFromMaster = false;
+        questionData.isModified = false;
 
-        return questionData;
-      }
-      // Case 2 & 3: Questions from master (with or without modifications)
-      else {
-        const masterQuestion = eq.questions_master;
-        const hasCustomText = eq.custom_text !== null;
-        const hasCustomOptions = eq.custom_options !== null;
-        const isModified = hasCustomText || hasCustomOptions;
-
-        let questionData: Question = {
-          id: eq.question_master_id,
-          type: masterQuestion.type,
-          question: eq.custom_text || masterQuestion.text,
-          required: eq.required,
-          page: eq.page_number,
-          isFromMaster: true,
-          masterQuestionId: masterQuestion.id,
-          originalText: masterQuestion.text,
-          originalOptions: masterQuestion.options,
-          isModified: isModified,
-        };
-
-        // Handle custom_options for modified questions
+        // Handle custom_options for new questions
         if (eq.custom_options) {
           if (Array.isArray(eq.custom_options)) {
-            // Modified dropdown/multiple-choice options
+            // Options array for dropdown/multiple-choice
             questionData.options = eq.custom_options;
           } else if (typeof eq.custom_options === 'object') {
-            // Modified placeholder or other metadata
+            // Object with metadata (placeholder, maxRating, etc.)
+            if (eq.custom_options.placeholder) questionData.placeholder = eq.custom_options.placeholder;
+            if (eq.custom_options.maxRating) questionData.maxRating = eq.custom_options.maxRating;
+            if (eq.custom_options.maxTags) questionData.maxTags = eq.custom_options.maxTags;
+          }
+        }
+      }
+      // Case 2: Question from master table (question_master_id is not null)
+      else {
+        const masterQuestion = eq.questions_master;
+        
+        // Get type from master question
+        questionData.type = masterQuestion.type;
+        
+        // Use custom text if available, otherwise use master text
+        questionData.question = eq.custom_text || masterQuestion.text;
+        
+        // Set master question tracking
+        questionData.isFromMaster = true;
+        questionData.masterQuestionId = masterQuestion.id;
+        questionData.originalText = masterQuestion.text;
+        questionData.originalOptions = masterQuestion.options;
+        questionData.isModified = !!(eq.custom_text || eq.custom_options);
+
+        // Handle options and other properties
+        if (eq.custom_options) {
+          // Use custom options if available
+          if (Array.isArray(eq.custom_options)) {
+            questionData.options = eq.custom_options;
+          } else if (typeof eq.custom_options === 'object') {
             if (eq.custom_options.placeholder) questionData.placeholder = eq.custom_options.placeholder;
             if (eq.custom_options.maxRating) questionData.maxRating = eq.custom_options.maxRating;
             if (eq.custom_options.maxTags) questionData.maxTags = eq.custom_options.maxTags;
             
-            // If no custom options but master has options, use master options
+            // If it's not an array but master has options, use master options
             if (!Array.isArray(eq.custom_options) && masterQuestion.options) {
               questionData.options = masterQuestion.options;
             }
@@ -368,9 +367,9 @@ export const loadEventQuestions = async (eventId: string): Promise<{ questions: 
             questionData.options = masterQuestion.options;
           }
         }
-
-        return questionData;
       }
+
+      return questionData;
     });
 
     console.log('Loaded questions with categorization:', questions.map(q => ({

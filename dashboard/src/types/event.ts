@@ -8,6 +8,9 @@ export interface Question {
   maxTags?: number;
   maxRating?: number;
   page?: number;                   // Page number for multi-page forms
+  rowNumber?: number;              // Row position within the page
+  columnNumber?: number;           // Column position within the row (0 or 1)
+  orderInCell?: number;            // Order within the same row/column position
   
   // New fields to track question origin and modifications
   isFromMaster?: boolean;          // true if from questions_master, false if completely new

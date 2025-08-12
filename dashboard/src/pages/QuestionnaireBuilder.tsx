@@ -281,8 +281,31 @@ export const QuestionnaireBuilder = ({ onBack, onNext, eventId }: QuestionnaireB
   };
 
   const handleNext = async () => {
-    const allQuestions = formPages.flat().flat().flat(); // Flatten all levels
-    if (allQuestions.length === 0) return;
+    // Flatten questions while preserving page/row/column structure
+    const questionsWithPositions: Question[] = [];
+    
+    formPages.forEach((page, pageIndex) => {
+      page.forEach((row, rowIndex) => {
+        row.forEach((column, columnIndex) => {
+          column.forEach((question, orderInCell) => {
+            questionsWithPositions.push({
+              ...question,
+              id: question.id || `question-${Date.now()}-${questionsWithPositions.length}`,
+              question: question.question || question.text || `Question ${questionsWithPositions.length + 1}`,
+              type: question.type,
+              options: question.options || (question.type === 'dropdown' || question.type === 'multiple-choice' || question.type === 'checkbox_group' ? ['Option 1', 'Option 2'] : null),
+              required: question.required || false,
+              page: pageIndex + 1, // 1-based page numbering
+              rowNumber: rowIndex,  // 0-based row numbering
+              columnNumber: columnIndex, // 0 or 1 for column
+              orderInCell: orderInCell // order within the same cell
+            });
+          });
+        });
+      });
+    });
+
+    if (questionsWithPositions.length === 0) return;
 
     if (!user || !eventId) {
       alert('Missing user or event information');
@@ -290,23 +313,12 @@ export const QuestionnaireBuilder = ({ onBack, onNext, eventId }: QuestionnaireB
     }
 
     try {
-      console.log('Saving questions to database:', allQuestions);
-      
-      // Convert questions to proper format and assign unique IDs
-      const questionsWithIds = allQuestions.map((q, index) => ({
-        ...q,
-        id: q.id || `question-${Date.now()}-${index}`,
-        question: q.question || q.text || `Question ${index + 1}`,
-        type: q.type,
-        options: q.options || (q.type === 'dropdown' || q.type === 'multiple-choice' || q.type === 'checkbox_group' ? ['Option 1', 'Option 2'] : null),
-        required: q.required || false,
-        page: Math.floor(index / 5) + 1 // Group questions into pages of 5
-      }));
+      console.log('Saving questions to database with positions:', questionsWithPositions);
 
       // Save to database
       const { success, error } = await saveEventQuestions(
         eventId, 
-        questionsWithIds, 
+        questionsWithPositions, 
         user.id
       );
 
@@ -328,7 +340,7 @@ export const QuestionnaireBuilder = ({ onBack, onNext, eventId }: QuestionnaireB
       }
 
       console.log('Questions saved successfully');
-      onNext(questionsWithIds);
+      onNext(questionsWithPositions);
     } catch (error) {
       console.error('Error saving questions:', error);
       alert('Failed to save questions. Please try again.');
@@ -387,6 +399,7 @@ export const QuestionnaireBuilder = ({ onBack, onNext, eventId }: QuestionnaireB
           <div className="space-y-2">
             {questionLabel}
             <Input 
+              key={question.id}
               placeholder={question.placeholder || "Enter your response"}
               value={currentValue || ""}
               onChange={(e) => handleValueChange(question.id, e.target.value)}
@@ -400,6 +413,7 @@ export const QuestionnaireBuilder = ({ onBack, onNext, eventId }: QuestionnaireB
           <div className="space-y-2">
             {questionLabel}
             <Textarea 
+              key={question.id}
               placeholder={question.placeholder || "Enter detailed response"}
               value={currentValue || ""}
               onChange={(e) => handleValueChange(question.id, e.target.value)}
@@ -413,6 +427,7 @@ export const QuestionnaireBuilder = ({ onBack, onNext, eventId }: QuestionnaireB
           <div className="space-y-2">
             {questionLabel}
             <Input 
+              key={question.id}
               type="email"
               placeholder={question.placeholder || "your@email.com"}
               value={currentValue || ""}
@@ -431,6 +446,7 @@ export const QuestionnaireBuilder = ({ onBack, onNext, eventId }: QuestionnaireB
                 +91
               </div>
               <Input 
+                key={question.id}
                 type="tel"
                 placeholder={question.placeholder || "Mobile number"}
                 value={currentValue || ""}
@@ -596,6 +612,7 @@ export const QuestionnaireBuilder = ({ onBack, onNext, eventId }: QuestionnaireB
               {tagValues.length < (question.maxTags || 5) && (
                 <div className="flex gap-2">
                   <Input
+                    key={`${question.id}-tag-input`}
                     placeholder="Add a tag..."
                     value={newTag}
                     onChange={(e) => setNewTag(e.target.value)}

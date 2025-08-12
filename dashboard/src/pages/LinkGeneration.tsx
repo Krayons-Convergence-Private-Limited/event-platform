@@ -64,7 +64,7 @@ export const LinkGeneration = ({ onBack, event, onViewEvent, onBackToDashboard }
 
       // Generate the final event URL
       const baseUrl = window.location.origin;
-      const finalUrl = `${baseUrl}/event/${uniqueSlug}`;
+      const finalUrl = `${baseUrl}/events/${uniqueSlug}`;
       setEventUrl(finalUrl);
       setLinkGenerated(true);
       
