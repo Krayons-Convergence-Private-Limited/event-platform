@@ -67,6 +67,8 @@ export const EventLanding = ({ eventId, eventSlug }: EventLandingProps) => {
       }
 
       console.log('Loading event data for:', { eventId, eventSlug });
+      console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+      console.log('Environment:', import.meta.env.MODE);
 
       // Load event data - use slug if provided, otherwise use ID
       const query = supabase.from('events').select('*');
